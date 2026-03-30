@@ -1,84 +1,94 @@
 import java.util.*;
 
-// Custom Exception
-class BookingException extends Exception {
-    public BookingException(String message) {
-        super(message);
-    }
-}
-
-// Booking Class
-class Booking {
-    String bookingId;
+// Booking Request
+class BookingRequest {
+    String guestName;
     String roomType;
 
-    public Booking(String bookingId, String roomType) {
-        this.bookingId = bookingId;
+    public BookingRequest(String guestName, String roomType) {
+        this.guestName = guestName;
         this.roomType = roomType;
     }
 }
 
-// Inventory Management
+// Shared Inventory (Thread-Safe)
 class RoomInventory {
     private Map<String, Integer> rooms = new HashMap<>();
 
     public RoomInventory() {
-        rooms.put("Single", 5);
-        rooms.put("Double", 3);
-        rooms.put("Suite", 2);
+        rooms.put("Single", 2);
+        rooms.put("Double", 2);
     }
 
-    public void decrement(String type) throws BookingException {
-        int available = rooms.getOrDefault(type, 0);
-        if (available <= 0) {
-            throw new BookingException("No rooms available for booking.");
+    // Critical Section (SYNCHRONIZED)
+    public synchronized boolean bookRoom(String roomType, String guestName) {
+
+        int available = rooms.getOrDefault(roomType, 0);
+
+        if (available > 0) {
+            System.out.println(guestName + " booking " + roomType + " room...");
+
+            // Simulate delay (to expose race condition if not synchronized)
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {}
+
+            rooms.put(roomType, available - 1);
+
+            System.out.println("✅ Booking confirmed for " + guestName);
+            return true;
+        } else {
+            System.out.println("❌ No rooms available for " + guestName);
+            return false;
         }
-        rooms.put(type, available - 1);
-    }
-
-    public void increment(String type) {
-        rooms.put(type, rooms.getOrDefault(type, 0) + 1);
     }
 
     public void display() {
-        System.out.println("\nCurrent Inventory:");
+        System.out.println("\nFinal Inventory:");
         for (String type : rooms.keySet()) {
             System.out.println(type + ": " + rooms.get(type));
         }
     }
 }
 
-// Booking Service
-class BookingService {
-    private Map<String, Booking> bookingHistory = new HashMap<>();
-    private Stack<String> rollbackStack = new Stack<>();
+// Shared Booking Queue
+class BookingQueue {
+    private Queue<BookingRequest> queue = new LinkedList<>();
+
+    // Add request
+    public synchronized void addRequest(BookingRequest request) {
+        queue.add(request);
+    }
+
+    // Remove request (Thread-safe)
+    public synchronized BookingRequest getRequest() {
+        return queue.poll();
+    }
+}
+
+// Thread Class
+class BookingProcessor extends Thread {
+    private BookingQueue queue;
     private RoomInventory inventory;
 
-    public BookingService(RoomInventory inventory) {
+    public BookingProcessor(BookingQueue queue, RoomInventory inventory) {
+        this.queue = queue;
         this.inventory = inventory;
     }
 
-    // Create Booking
-    public void createBooking(String bookingId, String roomType) throws BookingException {
+    public void run() {
+        while (true) {
+            BookingRequest request;
 
-        if (bookingHistory.containsKey(bookingId)) {
-            throw new BookingException("Booking ID already exists.");
-        }
+            // Critical section: fetching request
+            synchronized (queue) {
+                request = queue.getRequest();
+            }
 
-        inventory.decrement(roomType);
+            if (request == null) break;
 
-        Booking booking = new Booking(bookingId, roomType);
-        bookingHistory.put(bookingId, booking);
-
-        System.out.println("Booking confirmed: " + bookingId);
-    }
-
-    // Cancel Booking (Rollback Logic)
-    public void cancelBooking(String bookingId) throws BookingException {
-
-        // Validation
-        if (!bookingHistory.containsKey(bookingId)) {
-            throw new BookingException("Booking does not exist.");
+            // Critical section handled inside inventory
+            inventory.bookRoom(request.roomType, request.guestName);
         }
 
         Booking booking = bookingHistory.get(bookingId);
@@ -105,36 +115,31 @@ public class BookMyStay {
 
     public static void main(String[] args) {
 
-        Scanner sc = new Scanner(System.in);
         RoomInventory inventory = new RoomInventory();
-        BookingService service = new BookingService(inventory);
+        BookingQueue queue = new BookingQueue();
+
+        // Simulating multiple guests
+        queue.addRequest(new BookingRequest("Guest1", "Single"));
+        queue.addRequest(new BookingRequest("Guest2", "Single"));
+        queue.addRequest(new BookingRequest("Guest3", "Single")); // extra request
+        queue.addRequest(new BookingRequest("Guest4", "Double"));
+        queue.addRequest(new BookingRequest("Guest5", "Double"));
+
+        // Multiple threads (Concurrent processing)
+        BookingProcessor t1 = new BookingProcessor(queue, inventory);
+        BookingProcessor t2 = new BookingProcessor(queue, inventory);
+        BookingProcessor t3 = new BookingProcessor(queue, inventory);
+
+        t1.start();
+        t2.start();
+        t3.start();
 
         try {
-            System.out.println("=== Book My Stay ===");
+            t1.join();
+            t2.join();
+            t3.join();
+        } catch (InterruptedException e) {}
 
-            // Create Booking
-            System.out.print("Enter Booking ID: ");
-            String id = sc.nextLine();
-
-            System.out.print("Enter Room Type (Single/Double/Suite): ");
-            String type = sc.nextLine();
-
-            service.createBooking(id, type);
-
-            // Cancel Booking
-            System.out.print("\nEnter Booking ID to cancel: ");
-            String cancelId = sc.nextLine();
-
-            service.cancelBooking(cancelId);
-
-        } catch (BookingException e) {
-            System.out.println("Error: " + e.getMessage());
-        }
-
-        // Final state
         inventory.display();
-        service.showRollbackStack();
-
-        sc.close();
     }
 }
