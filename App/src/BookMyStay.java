@@ -1,13 +1,24 @@
 import java.util.*;
 
-// Custom Exception for invalid bookings
-class InvalidBookingException extends Exception {
-    public InvalidBookingException(String message) {
+// Custom Exception
+class BookingException extends Exception {
+    public BookingException(String message) {
         super(message);
     }
 }
 
-// Room Inventory Class
+// Booking Class
+class Booking {
+    String bookingId;
+    String roomType;
+
+    public Booking(String bookingId, String roomType) {
+        this.bookingId = bookingId;
+        this.roomType = roomType;
+    }
+}
+
+// Inventory Management
 class RoomInventory {
     private Map<String, Integer> rooms = new HashMap<>();
 
@@ -17,55 +28,75 @@ class RoomInventory {
         rooms.put("Suite", 2);
     }
 
-    public boolean isValidRoomType(String type) {
-        return rooms.containsKey(type);
-    }
-
-    public int getAvailableRooms(String type) {
-        return rooms.getOrDefault(type, 0);
-    }
-
-    public void bookRoom(String type, int count) throws InvalidBookingException {
-        int available = getAvailableRooms(type);
-
-        // Guarding system state
-        if (count > available) {
-            throw new InvalidBookingException("Not enough rooms available.");
+    public void decrement(String type) throws BookingException {
+        int available = rooms.getOrDefault(type, 0);
+        if (available <= 0) {
+            throw new BookingException("No rooms available for booking.");
         }
-
-        rooms.put(type, available - count);
+        rooms.put(type, available - 1);
     }
 
-    public void displayInventory() {
-        System.out.println("\nCurrent Room Availability:");
+    public void increment(String type) {
+        rooms.put(type, rooms.getOrDefault(type, 0) + 1);
+    }
+
+    public void display() {
+        System.out.println("\nCurrent Inventory:");
         for (String type : rooms.keySet()) {
-            System.out.println(type + " Rooms: " + rooms.get(type));
+            System.out.println(type + ": " + rooms.get(type));
         }
     }
 }
 
-// Validator Class
-class BookingValidator {
+// Booking Service
+class BookingService {
+    private Map<String, Booking> bookingHistory = new HashMap<>();
+    private Stack<String> rollbackStack = new Stack<>();
+    private RoomInventory inventory;
 
-    public static void validate(String roomType, int count, RoomInventory inventory)
-            throws InvalidBookingException {
+    public BookingService(RoomInventory inventory) {
+        this.inventory = inventory;
+    }
 
-        // Input validation
-        if (roomType == null || roomType.isEmpty()) {
-            throw new InvalidBookingException("Room type cannot be empty.");
+    // Create Booking
+    public void createBooking(String bookingId, String roomType) throws BookingException {
+
+        if (bookingHistory.containsKey(bookingId)) {
+            throw new BookingException("Booking ID already exists.");
         }
 
-        if (!inventory.isValidRoomType(roomType)) {
-            throw new InvalidBookingException("Invalid room type selected.");
+        inventory.decrement(roomType);
+
+        Booking booking = new Booking(bookingId, roomType);
+        bookingHistory.put(bookingId, booking);
+
+        System.out.println("Booking confirmed: " + bookingId);
+    }
+
+    // Cancel Booking (Rollback Logic)
+    public void cancelBooking(String bookingId) throws BookingException {
+
+        // Validation
+        if (!bookingHistory.containsKey(bookingId)) {
+            throw new BookingException("Booking does not exist.");
         }
 
-        if (count <= 0) {
-            throw new InvalidBookingException("Booking count must be greater than zero.");
-        }
+        Booking booking = bookingHistory.get(bookingId);
 
-        if (inventory.getAvailableRooms(roomType) <= 0) {
-            throw new InvalidBookingException("No rooms available for selected type.");
-        }
+        // Step 1: Push to stack (LIFO rollback)
+        rollbackStack.push(bookingId);
+
+        // Step 2: Restore inventory
+        inventory.increment(booking.roomType);
+
+        // Step 3: Remove booking from history
+        bookingHistory.remove(bookingId);
+
+        System.out.println("Booking cancelled: " + bookingId);
+    }
+
+    public void showRollbackStack() {
+        System.out.println("\nRollback Stack (Recent Cancellations): " + rollbackStack);
     }
 }
 
@@ -73,36 +104,37 @@ class BookingValidator {
 public class BookMyStay {
 
     public static void main(String[] args) {
+
         Scanner sc = new Scanner(System.in);
         RoomInventory inventory = new RoomInventory();
+        BookingService service = new BookingService(inventory);
 
         try {
             System.out.println("=== Book My Stay ===");
 
+            // Create Booking
+            System.out.print("Enter Booking ID: ");
+            String id = sc.nextLine();
+
             System.out.print("Enter Room Type (Single/Double/Suite): ");
-            String roomType = sc.nextLine();
+            String type = sc.nextLine();
 
-            System.out.print("Enter number of rooms: ");
-            int count = sc.nextInt();
+            service.createBooking(id, type);
 
-            // Step 1: Validate input (Fail-Fast)
-            BookingValidator.validate(roomType, count, inventory);
+            // Cancel Booking
+            System.out.print("\nEnter Booking ID to cancel: ");
+            String cancelId = sc.nextLine();
 
-            // Step 2: Process booking
-            inventory.bookRoom(roomType, count);
+            service.cancelBooking(cancelId);
 
-            System.out.println("Booking successful!");
-
-        } catch (InvalidBookingException e) {
-            // Graceful failure handling
-            System.out.println("Booking Failed: " + e.getMessage());
-
-        } catch (Exception e) {
-            System.out.println("Unexpected Error: " + e.getMessage());
+        } catch (BookingException e) {
+            System.out.println("Error: " + e.getMessage());
         }
 
-        // System continues safely
-        inventory.displayInventory();
+        // Final state
+        inventory.display();
+        service.showRollbackStack();
+
         sc.close();
     }
 }
