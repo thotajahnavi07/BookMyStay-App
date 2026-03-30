@@ -1,63 +1,118 @@
 import java.util.HashMap;
 import java.util.Map;
 
-// RoomInventory Class (Version 3.0)
+// ---------------- Room Domain Model ----------------
+abstract class Room {
+
+    protected String roomType;
+    protected double price;
+
+    public Room(String roomType, double price) {
+        this.roomType = roomType;
+        this.price = price;
+    }
+
+    public String getRoomType() {
+        return roomType;
+    }
+
+    public double getPrice() {
+        return price;
+    }
+
+    public void displayDetails() {
+        System.out.println("Room Type: " + roomType);
+        System.out.println("Price per Night: $" + price);
+    }
+}
+
+// Concrete Room Types
+class SingleRoom extends Room {
+    public SingleRoom() {
+        super("Single Room", 100);
+    }
+}
+
+class DoubleRoom extends Room {
+    public DoubleRoom() {
+        super("Double Room", 180);
+    }
+}
+
+class SuiteRoom extends Room {
+    public SuiteRoom() {
+        super("Suite Room", 350);
+    }
+}
+
+// ---------------- Inventory ----------------
 class RoomInventory {
 
-    // HashMap to store room type and availability
     private HashMap<String, Integer> inventory;
 
-    // Constructor initializes inventory
     public RoomInventory() {
         inventory = new HashMap<>();
 
-        // Register room types with counts
         inventory.put("Single Room", 5);
         inventory.put("Double Room", 3);
-        inventory.put("Suite Room", 2);
+        inventory.put("Suite Room", 0); // Example unavailable room
     }
 
-    // Method to get availability of a room type
     public int getAvailability(String roomType) {
         return inventory.getOrDefault(roomType, 0);
     }
 
-    // Method to update room availability
-    public void updateAvailability(String roomType, int newCount) {
-        inventory.put(roomType, newCount);
+    public Map<String, Integer> getAllInventory() {
+        return inventory;
+    }
+}
+
+// ---------------- Search Service ----------------
+class RoomSearchService {
+
+    private RoomInventory inventory;
+    private Map<String, Room> roomCatalog;
+
+    public RoomSearchService(RoomInventory inventory) {
+
+        this.inventory = inventory;
+
+        roomCatalog = new HashMap<>();
+        roomCatalog.put("Single Room", new SingleRoom());
+        roomCatalog.put("Double Room", new DoubleRoom());
+        roomCatalog.put("Suite Room", new SuiteRoom());
     }
 
-    // Display entire inventory
-    public void displayInventory() {
-        System.out.println("===== Current Room Inventory =====");
+    public void searchAvailableRooms() {
 
-        for (Map.Entry<String, Integer> entry : inventory.entrySet()) {
-            System.out.println(entry.getKey() + " : " + entry.getValue() + " rooms available");
+        System.out.println("===== Available Rooms =====");
+
+        for (String roomType : roomCatalog.keySet()) {
+
+            int available = inventory.getAvailability(roomType);
+
+            if (available > 0) {
+
+                Room room = roomCatalog.get(roomType);
+                room.displayDetails();
+                System.out.println("Available: " + available);
+                System.out.println();
+            }
         }
     }
 }
 
-
-// Main Application Class
+// ---------------- Main Class ----------------
 public class BookMyStay {
 
     public static void main(String[] args) {
 
-        // Initialize centralized inventory
         RoomInventory inventory = new RoomInventory();
 
-        // Display current inventory
-        inventory.displayInventory();
+        RoomSearchService searchService = new RoomSearchService(inventory);
 
-        System.out.println("\nChecking availability of Single Room...");
-        System.out.println("Available: " + inventory.getAvailability("Single Room"));
+        searchService.searchAvailableRooms();
 
-        System.out.println("\nUpdating availability of Single Room...");
-        inventory.updateAvailability("Single Room", 4);
-
-        System.out.println("\nUpdated Inventory:");
-        inventory.displayInventory();
-
-        System.out.println("\nApplication Terminated.");
+        System.out.println("Search completed. Inventory state unchanged.");
     }
 }
