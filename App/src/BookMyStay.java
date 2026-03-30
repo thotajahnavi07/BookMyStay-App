@@ -90,6 +90,23 @@ class BookingProcessor extends Thread {
             // Critical section handled inside inventory
             inventory.bookRoom(request.roomType, request.guestName);
         }
+
+        Booking booking = bookingHistory.get(bookingId);
+
+        // Step 1: Push to stack (LIFO rollback)
+        rollbackStack.push(bookingId);
+
+        // Step 2: Restore inventory
+        inventory.increment(booking.roomType);
+
+        // Step 3: Remove booking from history
+        bookingHistory.remove(bookingId);
+
+        System.out.println("Booking cancelled: " + bookingId);
+    }
+
+    public void showRollbackStack() {
+        System.out.println("\nRollback Stack (Recent Cancellations): " + rollbackStack);
     }
 }
 
