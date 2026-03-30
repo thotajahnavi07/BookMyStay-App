@@ -1,70 +1,94 @@
 import java.util.*;
 
-// Custom Exception for invalid bookings
-class InvalidBookingException extends Exception {
-    public InvalidBookingException(String message) {
-        super(message);
+// Booking Request
+class BookingRequest {
+    String guestName;
+    String roomType;
+
+    public BookingRequest(String guestName, String roomType) {
+        this.guestName = guestName;
+        this.roomType = roomType;
     }
 }
 
-// Room Inventory Class
+// Shared Inventory (Thread-Safe)
 class RoomInventory {
     private Map<String, Integer> rooms = new HashMap<>();
 
     public RoomInventory() {
-        rooms.put("Single", 5);
-        rooms.put("Double", 3);
-        rooms.put("Suite", 2);
+        rooms.put("Single", 2);
+        rooms.put("Double", 2);
     }
 
-    public boolean isValidRoomType(String type) {
-        return rooms.containsKey(type);
-    }
+    // Critical Section (SYNCHRONIZED)
+    public synchronized boolean bookRoom(String roomType, String guestName) {
 
-    public int getAvailableRooms(String type) {
-        return rooms.getOrDefault(type, 0);
-    }
+        int available = rooms.getOrDefault(roomType, 0);
 
-    public void bookRoom(String type, int count) throws InvalidBookingException {
-        int available = getAvailableRooms(type);
+        if (available > 0) {
+            System.out.println(guestName + " booking " + roomType + " room...");
 
-        // Guarding system state
-        if (count > available) {
-            throw new InvalidBookingException("Not enough rooms available.");
+            // Simulate delay (to expose race condition if not synchronized)
+            try {
+                Thread.sleep(100);
+            } catch (InterruptedException e) {}
+
+            rooms.put(roomType, available - 1);
+
+            System.out.println("✅ Booking confirmed for " + guestName);
+            return true;
+        } else {
+            System.out.println("❌ No rooms available for " + guestName);
+            return false;
         }
-
-        rooms.put(type, available - count);
     }
 
-    public void displayInventory() {
-        System.out.println("\nCurrent Room Availability:");
+    public void display() {
+        System.out.println("\nFinal Inventory:");
         for (String type : rooms.keySet()) {
-            System.out.println(type + " Rooms: " + rooms.get(type));
+            System.out.println(type + ": " + rooms.get(type));
         }
     }
 }
 
-// Validator Class
-class BookingValidator {
+// Shared Booking Queue
+class BookingQueue {
+    private Queue<BookingRequest> queue = new LinkedList<>();
 
-    public static void validate(String roomType, int count, RoomInventory inventory)
-            throws InvalidBookingException {
+    // Add request
+    public synchronized void addRequest(BookingRequest request) {
+        queue.add(request);
+    }
 
-        // Input validation
-        if (roomType == null || roomType.isEmpty()) {
-            throw new InvalidBookingException("Room type cannot be empty.");
-        }
+    // Remove request (Thread-safe)
+    public synchronized BookingRequest getRequest() {
+        return queue.poll();
+    }
+}
 
-        if (!inventory.isValidRoomType(roomType)) {
-            throw new InvalidBookingException("Invalid room type selected.");
-        }
+// Thread Class
+class BookingProcessor extends Thread {
+    private BookingQueue queue;
+    private RoomInventory inventory;
 
-        if (count <= 0) {
-            throw new InvalidBookingException("Booking count must be greater than zero.");
-        }
+    public BookingProcessor(BookingQueue queue, RoomInventory inventory) {
+        this.queue = queue;
+        this.inventory = inventory;
+    }
 
-        if (inventory.getAvailableRooms(roomType) <= 0) {
-            throw new InvalidBookingException("No rooms available for selected type.");
+    public void run() {
+        while (true) {
+            BookingRequest request;
+
+            // Critical section: fetching request
+            synchronized (queue) {
+                request = queue.getRequest();
+            }
+
+            if (request == null) break;
+
+            // Critical section handled inside inventory
+            inventory.bookRoom(request.roomType, request.guestName);
         }
     }
 }
@@ -73,36 +97,32 @@ class BookingValidator {
 public class BookMyStay {
 
     public static void main(String[] args) {
-        Scanner sc = new Scanner(System.in);
+
         RoomInventory inventory = new RoomInventory();
+        BookingQueue queue = new BookingQueue();
+
+        // Simulating multiple guests
+        queue.addRequest(new BookingRequest("Guest1", "Single"));
+        queue.addRequest(new BookingRequest("Guest2", "Single"));
+        queue.addRequest(new BookingRequest("Guest3", "Single")); // extra request
+        queue.addRequest(new BookingRequest("Guest4", "Double"));
+        queue.addRequest(new BookingRequest("Guest5", "Double"));
+
+        // Multiple threads (Concurrent processing)
+        BookingProcessor t1 = new BookingProcessor(queue, inventory);
+        BookingProcessor t2 = new BookingProcessor(queue, inventory);
+        BookingProcessor t3 = new BookingProcessor(queue, inventory);
+
+        t1.start();
+        t2.start();
+        t3.start();
 
         try {
-            System.out.println("=== Book My Stay ===");
+            t1.join();
+            t2.join();
+            t3.join();
+        } catch (InterruptedException e) {}
 
-            System.out.print("Enter Room Type (Single/Double/Suite): ");
-            String roomType = sc.nextLine();
-
-            System.out.print("Enter number of rooms: ");
-            int count = sc.nextInt();
-
-            // Step 1: Validate input (Fail-Fast)
-            BookingValidator.validate(roomType, count, inventory);
-
-            // Step 2: Process booking
-            inventory.bookRoom(roomType, count);
-
-            System.out.println("Booking successful!");
-
-        } catch (InvalidBookingException e) {
-            // Graceful failure handling
-            System.out.println("Booking Failed: " + e.getMessage());
-
-        } catch (Exception e) {
-            System.out.println("Unexpected Error: " + e.getMessage());
-        }
-
-        // System continues safely
-        inventory.displayInventory();
-        sc.close();
+        inventory.display();
     }
 }
